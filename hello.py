@@ -1,100 +1,128 @@
-import json
+
 import random
 import string
-from pathlib import Path
 
 
 class Bank:
-    database = 'data.json'
-    
-    @classmethod
-    def load_data(cls):
-        if Path(cls.database).exists():
-            with open(cls.database, 'r') as fs:
-                return json.load(fs)
-        return []
+    def __init__(self, data):
+        # The list belongs to the current Streamlit session.
+        self.data = data
 
-    @classmethod
-    def save_data(cls, data):
-        with open(cls.database, 'w') as fs:
-            json.dump(data, fs, indent=4)
+    def generate_account_number(self):
+        while True:
+            letters = "".join(
+                random.choices(string.ascii_uppercase, k=3)
+            )
+            digits = "".join(random.choices(string.digits, k=3))
+            special = random.choice("!@#$%")
 
-    @classmethod
-    def generate_account_number(cls):
-        chars = random.choices(string.ascii_letters, k=3) + \
-                random.choices(string.digits, k=3) + \
-                random.choices("!@#$%^&*", k=1)
-        random.shuffle(chars)
-        return ''.join(chars)
+            chars = list(letters + digits + special)
+            random.shuffle(chars)
+            account_number = "".join(chars)
 
-    @classmethod
-    def create_account(cls, name, age, email, pin):
-        data = cls.load_data()
-        if age < 18 or len(str(pin)) != 4:
-            return None, "Age must be 18+ and PIN should be 4 digits"
-        acc_no = cls.generate_account_number()
+            if not any(
+                user["account_number"] == account_number
+                for user in self.data
+            ):
+                return account_number
+
+    def create_account(self, name, age, email, pin):
+        name = name.strip()
+        email = email.strip()
+        pin = str(pin).strip()
+
+        if not name or not email:
+            return False, "Name and email are required.", None
+
+        if age < 18:
+            return False, "Account creation is only available for age 18+ in this demo.", None
+
+        if not pin.isdigit() or len(pin) != 4:
+            return False, "PIN must contain exactly 4 digits.", None
+
+        account_number = self.generate_account_number()
+
         user = {
             "name": name,
             "age": age,
             "email": email,
             "pin": pin,
-            "accountNo.": acc_no,
-            "balance": 0
+            "account_number": account_number,
+            "balance": 0,
         }
-        data.append(user)
-        cls.save_data(data)
-        return user, "Account created successfully"
 
-    @classmethod
-    def find_user(cls, acc_no, pin):
-        data = cls.load_data()
-        for user in data:
-            if user['accountNo.'] == acc_no and user['pin'] == pin:
+        self.data.append(user)
+        return True, "Account created successfully.", account_number
+
+    def find_user(self, account_number, pin):
+        account_number = str(account_number).strip()
+        pin = str(pin).strip()
+
+        for user in self.data:
+            if (
+                user["account_number"] == account_number
+                and user["pin"] == pin
+            ):
                 return user
+
         return None
 
-    @classmethod
-    def deposit(cls, acc_no, pin, amount):
-        data = cls.load_data()
-        for user in data:
-            if user['accountNo.'] == acc_no and user['pin'] == pin:
-                if 0 < amount <= 10000:
-                    user['balance'] += amount
-                    cls.save_data(data)
-                    return True, "Deposit successful"
-                return False, "Amount must be between 1 and 10000"
-        return False, "Invalid account or PIN"
+    def deposit(self, account_number, pin, amount):
+        user = self.find_user(account_number, pin)
 
-    @classmethod
-    def withdraw(cls, acc_no, pin, amount):
-        data = cls.load_data()
-        for user in data:
-            if user['accountNo.'] == acc_no and user['pin'] == pin:
-                if user['balance'] >= amount:
-                    user['balance'] -= amount
-                    cls.save_data(data)
-                    return True, "Withdrawal successful"
-                return False, "Insufficient balance"
-        return False, "Invalid account or PIN"
+        if user is None:
+            return False, "Invalid account number or PIN."
 
-    @classmethod
-    def update_user(cls, acc_no, pin, name=None, email=None, new_pin=None):
-        data = cls.load_data()
-        for user in data:
-            if user['accountNo.'] == acc_no and user['pin'] == pin:
-                user['name'] = name or user['name']
-                user['email'] = email or user['email']
-                user['pin'] = int(new_pin) if new_pin else user['pin']
-                cls.save_data(data)
-                return True, "User details updated"
-        return False, "User not found"
+        if amount < 1 or amount > 10000:
+            return False, "Deposit amount must be between 1 and 10,000."
 
-    @classmethod
-    def delete_user(cls, acc_no, pin):
-        data = cls.load_data()
-        for i, user in enumerate(data):
-            if user['accountNo.'] == acc_no and user['pin'] == pin:
-                data.pop(i)
-                cls.save_data(data)
-                return True, "Account deleted"
-        return False, "Account not found"
+        user["balance"] += amount
+        return True, f"Deposit successful. New balance: {user['balance']}"
+
+    def withdraw(self, account_number, pin, amount):
+        user = self.find_user(account_number, pin)
+
+        if user is None:
+            return False, "Invalid account number or PIN."
+
+        if amount < 1:
+            return False, "Withdrawal amount must be greater than zero."
+
+        if amount > user["balance"]:
+            return False, "Insufficient balance."
+
+        user["balance"] -= amount
+        return True, f"Withdrawal successful. New balance: {user['balance']}"
+
+    def update_user(
+        self, account_number, pin, name="", email="", new_pin=""
+    ):
+        user = self.find_user(account_number, pin)
+
+        if user is None:
+            return False, "Invalid account number or PIN."
+
+        if name.strip():
+            user["name"] = name.strip()
+
+        if email.strip():
+            user["email"] = email.strip()
+
+        if str(new_pin).strip():
+            new_pin = str(new_pin).strip()
+
+            if not new_pin.isdigit() or len(new_pin) != 4:
+                return False, "New PIN must contain exactly 4 digits."
+
+            user["pin"] = new_pin
+
+        return True, "Account information updated successfully."
+
+    def delete_user(self, account_number, pin):
+        user = self.find_user(account_number, pin)
+
+        if user is None:
+            return False, "Invalid account number or PIN."
+
+        self.data.remove(user)
+        return True, "Demo account deleted successfully."
